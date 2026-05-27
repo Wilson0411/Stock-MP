@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, startTransition, useEffect, useMemo, useState } from "react";
+import { Suspense, startTransition, useEffect, useMemo, useRef, useState } from "react";
 import { type ReadonlyURLSearchParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import { InfoButton } from "./info-button";
 import { ThemeToggle } from "./theme-toggle";
@@ -200,6 +200,10 @@ function formatTimestamp(value: string) {
   const seconds = `${date.getUTCSeconds()}`.padStart(2, "0");
 
   return `${year}/${month}/${day} ${hours}:${minutes}:${seconds} UTC`;
+}
+
+function hasLiveFallbackNotice(messages: string[]) {
+  return messages.some((message) => message.includes("回退到最近一次成功抓取的真實資料") || message.includes("保留最近一次成功抓取的真實資料狀態"));
 }
 
 function sortLabel(sortBy: SortOption) {
@@ -810,7 +814,7 @@ function metricInfo(key: string): InfoSpec {
     dataStatus: {
       title: "資料狀態",
       description: "顯示目前頁面是否成功抓到最新可用 TWSE 公開資料。",
-      formula: "API 成功回應則顯示即時 API，失敗則顯示更新失敗",
+      formula: "核心 API 成功則顯示即時 API；若沿用上一輪真實資料則顯示部分更新；首次核心抓取失敗才顯示更新失敗",
     },
     generatedAt: {
       title: "產生時間",
@@ -1426,6 +1430,17 @@ function DashboardPage() {
   const [backtest, setBacktest] = useState<BacktestSummary>(emptyBacktest);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadNotice, setLoadNotice] = useState<string | null>(null);
+  const hasAnalysisDataRef = useRef(false);
+  const hasSourceDataRef = useRef(false);
+
+  useEffect(() => {
+    hasAnalysisDataRef.current = analysis.allSignals.length > 0;
+  }, [analysis]);
+
+  useEffect(() => {
+    hasSourceDataRef.current = sources.length > 0;
+  }, [sources]);
 
   useEffect(() => {
     let active = true;
@@ -1450,27 +1465,56 @@ function DashboardPage() {
         return;
       }
 
-      const failedSlices: string[] = [];
+      const criticalFailures: string[] = [];
+      const auxiliaryFailures: string[] = [];
+      const runtimeNotices: string[] = [];
 
       if (analysisResult.status === "fulfilled" && analysisResult.value.ok) {
-        setAnalysis((await analysisResult.value.json()) as AnalysisResponse);
+        const nextAnalysis = (await analysisResult.value.json()) as AnalysisResponse;
+        setAnalysis(nextAnalysis);
+        hasAnalysisDataRef.current = nextAnalysis.allSignals.length > 0;
+
+        if (hasLiveFallbackNotice(nextAnalysis.methodology)) {
+          runtimeNotices.push("候選清單暫時改用最近一次成功抓取的真實資料");
+        }
       } else {
-        failedSlices.push("候選清單");
+        if (hasAnalysisDataRef.current) {
+          runtimeNotices.push("候選清單暫時沿用上一輪成功抓取的真實資料");
+        } else {
+          criticalFailures.push("候選清單");
+        }
       }
 
       if (sourceResult.status === "fulfilled" && sourceResult.value.ok) {
-        setSources((await sourceResult.value.json()) as DataSourceStatus[]);
+        const nextSources = (await sourceResult.value.json()) as DataSourceStatus[];
+        setSources(nextSources);
+        hasSourceDataRef.current = nextSources.length > 0;
+
+        if (hasLiveFallbackNotice(nextSources.map((source) => source.notes))) {
+          runtimeNotices.push("資料來源狀態暫時沿用最近一次成功抓取的真實結果");
+        }
       } else {
-        failedSlices.push("資料來源");
+        if (hasSourceDataRef.current) {
+          runtimeNotices.push("資料來源狀態暫時沿用上一輪成功抓取的真實結果");
+        } else {
+          criticalFailures.push("資料來源");
+        }
       }
 
       if (backtestResult.status === "fulfilled" && backtestResult.value.ok) {
         setBacktest((await backtestResult.value.json()) as BacktestSummary);
       } else {
-        failedSlices.push("回測摘要");
+        auxiliaryFailures.push("回測摘要");
       }
 
-      setLoadError(failedSlices.length > 0 ? `目前無法更新：${failedSlices.join("、")}` : null);
+      setLoadError(criticalFailures.length > 0 ? `目前無法更新：${criticalFailures.join("、")}` : null);
+
+      const notices = [
+        auxiliaryFailures.length > 0 ? `部分資料暫未更新：${auxiliaryFailures.join("、")}` : null,
+        ...runtimeNotices,
+      ].filter((notice): notice is string => Boolean(notice));
+
+      setLoadNotice(notices.length > 0 ? notices.join("；") : null);
       setLoading(false);
     }
 
@@ -1558,6 +1602,11 @@ function DashboardPage() {
                 {loadError}
               </div>
             ) : null}
+            {!loadError && loadNotice ? (
+              <div className="mt-4 rounded-2xl border border-[rgba(186,74,0,0.18)] bg-[rgba(186,74,0,0.08)] px-4 py-3 text-sm text-[color:var(--accent)]">
+                {loadNotice}
+              </div>
+            ) : null}
             <div className="mt-4 flex flex-wrap items-center gap-3">
               <button
                 type="button"
@@ -1592,7 +1641,7 @@ function DashboardPage() {
           <div className="grid gap-4 rounded-[30px] bg-[color:var(--surface-strong)] p-6">
             <div>
               {labelInfo("資料狀態", metricInfo("dataStatus"))}
-              <p className="mt-2 text-2xl font-semibold">{loading ? "載入中" : loadError ? "更新失敗" : "即時 API"}</p>
+              <p className="mt-2 text-2xl font-semibold">{loading ? "載入中" : loadError ? "更新失敗" : loadNotice ? "部分更新" : "即時 API"}</p>
             </div>
             <div>
               {labelInfo("產生時間", metricInfo("generatedAt"))}

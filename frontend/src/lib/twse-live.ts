@@ -1,4 +1,7 @@
 import { get as httpsGet } from "node:https";
+import { readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 
 type BrokerFlow = {
   broker: string;
@@ -110,58 +113,122 @@ const historicalSearchDays = 45;
 const institutionalWindowDays = 5;
 const institutionalSearchDays = 10;
 const marginSearchDays = 10;
+const liveAnalysisCachePath = join(tmpdir(), "stock-mp-live-analysis.json");
+const liveDataSourcesCachePath = join(tmpdir(), "stock-mp-live-data-sources.json");
+
+let lastSuccessfulDataset: LiveAnalysisDataset | null = null;
+let lastSuccessfulDataSources: DataSourceStatus[] | null = null;
 
 export async function buildLiveAnalysisDataset(): Promise<LiveAnalysisDataset> {
-  const [companyMetaMap, marketTables, institutionalTables, marginTables] = await Promise.all([
-    fetchCompanyMetaMap(),
-    fetchRecentMarketTables(historicalMarketDays, historicalSearchDays),
-    fetchRecentInstitutionalTables(institutionalWindowDays, institutionalSearchDays),
-    fetchRecentMarginTables(2, marginSearchDays),
-  ]);
+  try {
+    const [companyMetaMap, marketTables, institutionalTables, marginTables] = await Promise.all([
+      fetchCompanyMetaMap(),
+      fetchRecentMarketTables(historicalMarketDays, historicalSearchDays),
+      fetchRecentInstitutionalTables(institutionalWindowDays, institutionalSearchDays),
+      fetchRecentMarginTables(2, marginSearchDays),
+    ]);
 
-  if (marketTables.length === 0) {
-    throw new Error("目前無法取得 TWSE 上市收盤資料。");
+    if (marketTables.length === 0) {
+      throw new Error("目前無法取得 TWSE 上市收盤資料。");
+    }
+
+    const latestMarketTable = marketTables[0];
+    const latestInstitutionalTable = institutionalTables[0] ?? null;
+    const latestMarginTable = marginTables[0] ?? null;
+    const previousMarginTable = marginTables[1] ?? null;
+    const snapshots = buildSnapshots(
+      companyMetaMap,
+      marketTables,
+      institutionalTables,
+      latestInstitutionalTable,
+      latestMarginTable,
+      previousMarginTable,
+    );
+
+    const dataset = {
+      generatedAt: new Date().toISOString(),
+      methodology: [
+        `每次請求都即時抓取 TWSE 上市收盤資料，最新可用日為 ${formatDateLabel(latestMarketTable.date)}。`,
+        latestInstitutionalTable
+          ? `法人買賣超使用 TWSE T86 最近可用公告日 ${formatDateLabel(latestInstitutionalTable.date)}。`
+          : "法人買賣超今日尚無可用資料，暫不納入。",
+        latestMarginTable
+          ? `融資融券使用 TWSE 最近可用公告日 ${formatDateLabel(latestMarginTable.date)}，並與前一可用日比較變化率。`
+          : "融資融券今日尚無可用資料，暫不納入。",
+        "公開資料不含券商分點明細，現以外資、投信、自營商近五日真實流向作為公開籌碼代理。",
+        "所有數值均來自最新可用公開資料；若交易所當日尚未更新，系統會自動回退到最近可用交易日。",
+      ],
+      snapshots,
+      dataSources: buildDataSources(latestMarketTable, latestInstitutionalTable, latestMarginTable),
+    } satisfies LiveAnalysisDataset;
+
+    lastSuccessfulDataset = dataset;
+    lastSuccessfulDataSources = dataset.dataSources;
+    void writeJsonCache(liveAnalysisCachePath, dataset);
+    void writeJsonCache(liveDataSourcesCachePath, dataset.dataSources);
+    return dataset;
+  } catch (error) {
+    if (lastSuccessfulDataset) {
+      return {
+        ...lastSuccessfulDataset,
+        methodology: [
+          ...lastSuccessfulDataset.methodology,
+          `本次更新因 TWSE 暫時拒絕回應而回退到最近一次成功抓取的真實資料：${formatIsoTimestamp(lastSuccessfulDataset.generatedAt)}。`,
+        ],
+      };
+    }
+
+    const cachedDataset = await readJsonCache<LiveAnalysisDataset>(liveAnalysisCachePath);
+
+    if (cachedDataset) {
+      lastSuccessfulDataset = cachedDataset;
+      lastSuccessfulDataSources = cachedDataset.dataSources;
+
+      return {
+        ...cachedDataset,
+        methodology: [
+          ...cachedDataset.methodology,
+          `本次更新因 TWSE 暫時拒絕回應而回退到最近一次成功抓取的真實資料：${formatIsoTimestamp(cachedDataset.generatedAt)}。`,
+        ],
+      };
+    }
+
+    throw error;
   }
-
-  const latestMarketTable = marketTables[0];
-  const latestInstitutionalTable = institutionalTables[0] ?? null;
-  const latestMarginTable = marginTables[0] ?? null;
-  const previousMarginTable = marginTables[1] ?? null;
-  const snapshots = buildSnapshots(
-    companyMetaMap,
-    marketTables,
-    institutionalTables,
-    latestInstitutionalTable,
-    latestMarginTable,
-    previousMarginTable,
-  );
-
-  return {
-    generatedAt: new Date().toISOString(),
-    methodology: [
-      `每次請求都即時抓取 TWSE 上市收盤資料，最新可用日為 ${formatDateLabel(latestMarketTable.date)}。`,
-      latestInstitutionalTable
-        ? `法人買賣超使用 TWSE T86 最近可用公告日 ${formatDateLabel(latestInstitutionalTable.date)}。`
-        : "法人買賣超今日尚無可用資料，暫不納入。",
-      latestMarginTable
-        ? `融資融券使用 TWSE 最近可用公告日 ${formatDateLabel(latestMarginTable.date)}，並與前一可用日比較變化率。`
-        : "融資融券今日尚無可用資料，暫不納入。",
-      "公開資料不含券商分點明細，現以外資、投信、自營商近五日真實流向作為公開籌碼代理。",
-      "所有數值均來自最新可用公開資料；若交易所當日尚未更新，系統會自動回退到最近可用交易日。",
-    ],
-    snapshots,
-    dataSources: buildDataSources(latestMarketTable, latestInstitutionalTable, latestMarginTable),
-  };
 }
 
 export async function getLiveDataSources(): Promise<DataSourceStatus[]> {
-  const [marketTables, institutionalTables, marginTables] = await Promise.all([
-    fetchRecentMarketTables(1, 7),
-    fetchRecentInstitutionalTables(1, institutionalSearchDays),
-    fetchRecentMarginTables(1, marginSearchDays),
-  ]);
+  try {
+    const [marketTables, institutionalTables, marginTables] = await Promise.all([
+      fetchRecentMarketTables(1, 7),
+      fetchRecentInstitutionalTables(1, institutionalSearchDays),
+      fetchRecentMarginTables(1, marginSearchDays),
+    ]);
 
-  return buildDataSources(marketTables[0] ?? null, institutionalTables[0] ?? null, marginTables[0] ?? null);
+    const dataSources = buildDataSources(marketTables[0] ?? null, institutionalTables[0] ?? null, marginTables[0] ?? null);
+    lastSuccessfulDataSources = dataSources;
+    void writeJsonCache(liveDataSourcesCachePath, dataSources);
+    return dataSources;
+  } catch (error) {
+    if (lastSuccessfulDataSources) {
+      return lastSuccessfulDataSources.map((source) => ({
+        ...source,
+        notes: `${source.notes} TWSE 本次暫時無法回應，已保留最近一次成功抓取的真實資料狀態。`,
+      }));
+    }
+
+    const cachedDataSources = await readJsonCache<DataSourceStatus[]>(liveDataSourcesCachePath);
+
+    if (cachedDataSources) {
+      lastSuccessfulDataSources = cachedDataSources;
+      return cachedDataSources.map((source) => ({
+        ...source,
+        notes: `${source.notes} TWSE 本次暫時無法回應，已保留最近一次成功抓取的真實資料狀態。`,
+      }));
+    }
+
+    throw error;
+  }
 }
 
 function buildSnapshots(
@@ -251,7 +318,13 @@ async function fetchRecentMarketTables(requiredCount: number, maxSearchDays: num
 
   for (let offset = 0; offset < maxSearchDays && tables.length < requiredCount; offset += 1) {
     const date = formatDateCode(addDays(new Date(), -offset));
-    const table = await fetchMarketTable(date);
+    let table: MarketTable | null = null;
+
+    try {
+      table = await fetchMarketTable(date);
+    } catch {
+      continue;
+    }
 
     if (table) {
       tables.push(table);
@@ -266,7 +339,13 @@ async function fetchRecentInstitutionalTables(requiredCount: number, maxSearchDa
 
   for (let offset = 0; offset < maxSearchDays && tables.length < requiredCount; offset += 1) {
     const date = formatDateCode(addDays(new Date(), -offset));
-    const table = await fetchInstitutionalTable(date);
+    let table: InstitutionalTable | null = null;
+
+    try {
+      table = await fetchInstitutionalTable(date);
+    } catch {
+      continue;
+    }
 
     if (table) {
       tables.push(table);
@@ -281,7 +360,13 @@ async function fetchRecentMarginTables(requiredCount: number, maxSearchDays: num
 
   for (let offset = 0; offset < maxSearchDays && tables.length < requiredCount; offset += 1) {
     const date = formatDateCode(addDays(new Date(), -offset));
-    const table = await fetchMarginTable(date);
+    let table: MarginTable | null = null;
+
+    try {
+      table = await fetchMarginTable(date);
+    } catch {
+      continue;
+    }
 
     if (table) {
       tables.push(table);
@@ -582,6 +667,39 @@ function wait(delayMs: number) {
   return new Promise<void>((resolve) => {
     setTimeout(resolve, delayMs);
   });
+}
+
+function formatIsoTimestamp(value: string) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  const year = date.getUTCFullYear();
+  const month = `${date.getUTCMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getUTCDate()}`.padStart(2, "0");
+  const hours = `${date.getUTCHours()}`.padStart(2, "0");
+  const minutes = `${date.getUTCMinutes()}`.padStart(2, "0");
+
+  return `${year}-${month}-${day} ${hours}:${minutes} UTC`;
+}
+
+async function writeJsonCache<T>(filePath: string, value: T) {
+  try {
+    await writeFile(filePath, JSON.stringify(value), "utf8");
+  } catch {
+    // Ignore cache write failures and keep serving live responses.
+  }
+}
+
+async function readJsonCache<T>(filePath: string) {
+  try {
+    const raw = await readFile(filePath, "utf8");
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
 }
 
 function detectKey(record: Record<string, string>, candidates: string[]) {
