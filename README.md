@@ -14,13 +14,12 @@
 - Next API 端點: /api/chip-analysis/opportunities
 - Next API 端點: /api/chip-analysis/data-sources
 - Next API 端點: /api/chip-analysis/backtest-summary
-- 內建示範股票池與籌碼樣本
+- 最新可用 TWSE 公開資料串接: 日成交、三大法人、資券
 - 做多 / 做空分數、信心分數、建議進場、停損、停利
 - 產業化評分權重，讓不同族群採用不同訊號邏輯
-- 回測摘要與資料來源狀態 API
+- 資料來源狀態 API 與回測停用狀態提示
 - API 回傳明確標示 TWSE_ONLY 與股票池規則
-- 上市股票池白名單改由 appsettings.json 的 ListedUniverse.Symbols 控制
-- 前端儀表板顯示同站 API 結果，若 API 異常則顯示示範資料，並支援日間 / 夜間切換
+- 前端儀表板顯示同站 API 結果，並支援日間 / 夜間切換
 
 ## 啟動方式
 
@@ -52,10 +51,11 @@ $env:NEXT_PUBLIC_API_BASE_URL="http://localhost:5273"
 
 部署後前端與 API 會同站運作，`NEXT_PUBLIC_API_BASE_URL` 可以留空。
 
-若要調整可分析的上市股票池，目前請修改 [frontend/src/lib/chip-analysis.ts](frontend/src/lib/chip-analysis.ts) 內的示範股票池與規則。
+若要調整可分析的上市股票條件，請修改 [frontend/src/lib/chip-analysis.ts](frontend/src/lib/chip-analysis.ts) 的篩選規則與 [frontend/src/lib/twse-live.ts](frontend/src/lib/twse-live.ts) 的資料整理流程。
 
 ## 重要說明
 
-- 目前資料來源是示範樣本，不是正式即時盤後資料。
+- 目前首頁資料來自 TWSE 公開資料，系統每次重整都會重新抓取最新可用交易日資料。
+- 券商分點明細目前沒有免費公開來源，畫面中的主力/分點欄位是以公開法人流向代理，不是商用分點逐筆資料。
 - 高勝率不能保證，必須以真實資料源、歷史回測、風控與滑價模型持續迭代。
 - 若未來需要獨立擴充資料管線或權限控管，可再把 [backend/StockMP.Api](backend/StockMP.Api) 作為獨立服務重啟。

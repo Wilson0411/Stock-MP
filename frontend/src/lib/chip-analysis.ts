@@ -78,19 +78,19 @@ export type DataSourceStatus = {
 export type BacktestPeriodMetric = {
   period: string;
   totalSignals: number;
-  winRate: number;
-  averageReturnPercent: number;
-  maxDrawdownPercent: number;
-  profitFactor: number;
+  winRate: number | null;
+  averageReturnPercent: number | null;
+  maxDrawdownPercent: number | null;
+  profitFactor: number | null;
 };
 
 export type BacktestSummary = {
   generatedAt: string;
   periods: BacktestPeriodMetric[];
-  overallWinRate: number;
-  averageReturnPercent: number;
-  maxDrawdownPercent: number;
-  profitFactor: number;
+  overallWinRate: number | null;
+  averageReturnPercent: number | null;
+  maxDrawdownPercent: number | null;
+  profitFactor: number | null;
   notes: string;
 };
 
@@ -139,82 +139,7 @@ type ScoringProfile = {
 };
 
 const marketScope = "TWSE_ONLY";
-const universeRule = "僅納入上市四位數股票代號樣本";
-
-const sampleUniverse: StockChipSnapshot[] = [
-  {
-    symbol: "2330",
-    name: "台積電",
-    sector: "半導體",
-    brokerFlows: [
-      { broker: "凱基台北", netLots: 1380, fiveDayNetLots: 4220, followThroughRate: 0.82, aggressionScore: 0.74 },
-      { broker: "摩根", netLots: 920, fiveDayNetLots: 2780, followThroughRate: 0.76, aggressionScore: 0.69 },
-      { broker: "富邦", netLots: 640, fiveDayNetLots: 1900, followThroughRate: 0.68, aggressionScore: 0.61 },
-    ],
-    institutionalFlow: { foreignNetLots: 4860, investmentTrustNetLots: 940, dealerNetLots: 320, foreignStreakDays: 4, marginBalanceChangeRate: -3.2, shortInterestChangeRate: -2.8 },
-    priceAction: { lastClose: 912, dayChangePercent: 1.9, fiveDayChangePercent: 4.8, twentyDayChangePercent: 11.3, distanceFromTwentyDayHighPercent: 2.4, distanceFromTwentyDayLowPercent: 14.8, estimatedAtrPercent: 2.3 },
-  },
-  {
-    symbol: "2454",
-    name: "聯發科",
-    sector: "IC 設計",
-    brokerFlows: [
-      { broker: "美林", netLots: 780, fiveDayNetLots: 2410, followThroughRate: 0.74, aggressionScore: 0.66 },
-      { broker: "港商野村", netLots: 560, fiveDayNetLots: 1740, followThroughRate: 0.67, aggressionScore: 0.64 },
-      { broker: "元富", netLots: 240, fiveDayNetLots: 910, followThroughRate: 0.59, aggressionScore: 0.52 },
-    ],
-    institutionalFlow: { foreignNetLots: 2680, investmentTrustNetLots: 620, dealerNetLots: 180, foreignStreakDays: 3, marginBalanceChangeRate: -1.6, shortInterestChangeRate: -1.4 },
-    priceAction: { lastClose: 1295, dayChangePercent: 1.1, fiveDayChangePercent: 3.9, twentyDayChangePercent: 8.7, distanceFromTwentyDayHighPercent: 3.6, distanceFromTwentyDayLowPercent: 11.4, estimatedAtrPercent: 2.7 },
-  },
-  {
-    symbol: "2303",
-    name: "聯電",
-    sector: "半導體",
-    brokerFlows: [
-      { broker: "台新", netLots: 410, fiveDayNetLots: 1090, followThroughRate: 0.61, aggressionScore: 0.56 },
-      { broker: "富邦建國", netLots: 290, fiveDayNetLots: 890, followThroughRate: 0.58, aggressionScore: 0.48 },
-      { broker: "新光", netLots: -120, fiveDayNetLots: 180, followThroughRate: 0.44, aggressionScore: 0.39 },
-    ],
-    institutionalFlow: { foreignNetLots: 1140, investmentTrustNetLots: 180, dealerNetLots: 70, foreignStreakDays: 2, marginBalanceChangeRate: -0.8, shortInterestChangeRate: -0.4 },
-    priceAction: { lastClose: 54.8, dayChangePercent: 0.7, fiveDayChangePercent: 2.8, twentyDayChangePercent: 6.1, distanceFromTwentyDayHighPercent: 5.5, distanceFromTwentyDayLowPercent: 8.9, estimatedAtrPercent: 2.1 },
-  },
-  {
-    symbol: "2603",
-    name: "長榮",
-    sector: "航運",
-    brokerFlows: [
-      { broker: "新加坡商瑞銀", netLots: -1060, fiveDayNetLots: -3120, followThroughRate: 0.79, aggressionScore: 0.71 },
-      { broker: "元大總公司", netLots: -640, fiveDayNetLots: -2180, followThroughRate: 0.74, aggressionScore: 0.69 },
-      { broker: "港商法國興業", netLots: -420, fiveDayNetLots: -1460, followThroughRate: 0.67, aggressionScore: 0.62 },
-    ],
-    institutionalFlow: { foreignNetLots: -3510, investmentTrustNetLots: -240, dealerNetLots: -110, foreignStreakDays: -4, marginBalanceChangeRate: 6.1, shortInterestChangeRate: 8.4 },
-    priceAction: { lastClose: 214.5, dayChangePercent: -2.6, fiveDayChangePercent: -7.1, twentyDayChangePercent: -10.8, distanceFromTwentyDayHighPercent: 16.7, distanceFromTwentyDayLowPercent: 1.8, estimatedAtrPercent: 3.4 },
-  },
-  {
-    symbol: "2615",
-    name: "萬海",
-    sector: "航運",
-    brokerFlows: [
-      { broker: "港商麥格理", netLots: -520, fiveDayNetLots: -1650, followThroughRate: 0.71, aggressionScore: 0.64 },
-      { broker: "美商高盛", netLots: -470, fiveDayNetLots: -1420, followThroughRate: 0.66, aggressionScore: 0.6 },
-      { broker: "國票敦北法人", netLots: -210, fiveDayNetLots: -780, followThroughRate: 0.58, aggressionScore: 0.53 },
-    ],
-    institutionalFlow: { foreignNetLots: -2140, investmentTrustNetLots: -160, dealerNetLots: -90, foreignStreakDays: -3, marginBalanceChangeRate: 4.3, shortInterestChangeRate: 5.8 },
-    priceAction: { lastClose: 92.6, dayChangePercent: -1.8, fiveDayChangePercent: -5.9, twentyDayChangePercent: -9.1, distanceFromTwentyDayHighPercent: 14.2, distanceFromTwentyDayLowPercent: 2.6, estimatedAtrPercent: 3.1 },
-  },
-  {
-    symbol: "3706",
-    name: "神達",
-    sector: "伺服器",
-    brokerFlows: [
-      { broker: "兆豐寶成", netLots: 320, fiveDayNetLots: 980, followThroughRate: 0.62, aggressionScore: 0.57 },
-      { broker: "群益金鼎", netLots: 180, fiveDayNetLots: 610, followThroughRate: 0.55, aggressionScore: 0.49 },
-      { broker: "永豐金", netLots: -60, fiveDayNetLots: 90, followThroughRate: 0.41, aggressionScore: 0.38 },
-    ],
-    institutionalFlow: { foreignNetLots: 920, investmentTrustNetLots: 210, dealerNetLots: 40, foreignStreakDays: 2, marginBalanceChangeRate: 1.8, shortInterestChangeRate: -0.9 },
-    priceAction: { lastClose: 68.3, dayChangePercent: 0.4, fiveDayChangePercent: 2.1, twentyDayChangePercent: 5.6, distanceFromTwentyDayHighPercent: 7.3, distanceFromTwentyDayLowPercent: 7.9, estimatedAtrPercent: 2.8 },
-  },
-];
+const universeRule = "僅納入上市四位數股票代號";
 
 const sectorProfiles: Record<string, ScoringProfile> = {
   半導體: { name: "Institutional Momentum", brokerWeight: 0.31, institutionalWeight: 0.31, priceWeight: 0.16, behaviorWeight: 0.12, leverageWeight: 0.1, entryBufferMultiplier: 0.3, stopAtrMultiplier: 1.15, targetAtrMultiplier: 1.95 },
@@ -234,20 +159,6 @@ const defaultProfile: ScoringProfile = {
   stopAtrMultiplier: 1.2,
   targetAtrMultiplier: 1.9,
 };
-
-const methodology = [
-  "以券商分點五日淨買賣、連續性與追價積極度衡量主力習慣。",
-  "納入外資、投信、自營商與資券變化，建立吸籌與派發雙向分數。",
-  "依產業套用不同權重設定，避免半導體與航運共用同一套籌碼邏輯。",
-  "依價格位置與估計波動度計算建議進場、停損、停利，保持固定風報比。",
-  "目前資料為內建示範樣本，正式上線前需串接上市盤後或商用資料源並回測。",
-];
-
-const backtestPeriods: BacktestPeriodMetric[] = [
-  { period: "2025 Q4", totalSignals: 142, winRate: 0.61, averageReturnPercent: 3.8, maxDrawdownPercent: -5.7, profitFactor: 1.56 },
-  { period: "2026 Q1", totalSignals: 167, winRate: 0.64, averageReturnPercent: 4.3, maxDrawdownPercent: -4.9, profitFactor: 1.71 },
-  { period: "2026 Q2", totalSignals: 119, winRate: 0.67, averageReturnPercent: 4.9, maxDrawdownPercent: -4.2, profitFactor: 1.88 },
-];
 
 export async function getLatestAnalysis(): Promise<AnalysisResponse> {
   const liveDataset = await buildLiveAnalysisDataset();
@@ -275,11 +186,11 @@ export function getBacktestSummary(): BacktestSummary {
   return {
     generatedAt: new Date().toISOString(),
     periods: [],
-    overallWinRate: 0,
-    averageReturnPercent: 0,
-    maxDrawdownPercent: 0,
-    profitFactor: 0,
-    notes: "目前已切換為真實 TWSE 最新資料，但歷史回測模組尚未完成正式建置，因此暫不提供示範績效數字。",
+    overallWinRate: null,
+    averageReturnPercent: null,
+    maxDrawdownPercent: null,
+    profitFactor: null,
+    notes: "目前未提供真實歷史回測結果；為避免假數據，回測統計已停用，直到完成正式歷史資料回測。",
   };
 }
 

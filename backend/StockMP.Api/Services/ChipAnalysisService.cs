@@ -7,7 +7,7 @@ namespace StockMP.Api.Services;
 public sealed class ChipAnalysisService : IChipAnalysisService
 {
     private const string MarketScope = "TWSE_ONLY";
-    private const string UniverseRule = "僅納入上市四位數股票代號樣本";
+    private const string UniverseRule = "僅納入上市四位數股票代號";
 
     private sealed record ScoringProfile(
         string Name,
@@ -19,82 +19,6 @@ public sealed class ChipAnalysisService : IChipAnalysisService
         decimal EntryBufferMultiplier,
         decimal StopAtrMultiplier,
         decimal TargetAtrMultiplier);
-
-    private static readonly IReadOnlyList<StockChipSnapshot> SampleUniverse = new List<StockChipSnapshot>
-    {
-        new(
-            "2330",
-            "台積電",
-            "半導體",
-            new List<BrokerFlow>
-            {
-                new("凱基台北", 1380m, 4220m, 0.82m, 0.74m),
-                new("摩根", 920m, 2780m, 0.76m, 0.69m),
-                new("富邦", 640m, 1900m, 0.68m, 0.61m),
-            },
-            new InstitutionalFlow(4860m, 940m, 320m, 4, -3.2m, -2.8m),
-            new PriceAction(912m, 1.9m, 4.8m, 11.3m, 2.4m, 14.8m, 2.3m)),
-        new(
-            "2454",
-            "聯發科",
-            "IC 設計",
-            new List<BrokerFlow>
-            {
-                new("美林", 780m, 2410m, 0.74m, 0.66m),
-                new("港商野村", 560m, 1740m, 0.67m, 0.64m),
-                new("元富", 240m, 910m, 0.59m, 0.52m),
-            },
-            new InstitutionalFlow(2680m, 620m, 180m, 3, -1.6m, -1.4m),
-            new PriceAction(1295m, 1.1m, 3.9m, 8.7m, 3.6m, 11.4m, 2.7m)),
-        new(
-            "2303",
-            "聯電",
-            "半導體",
-            new List<BrokerFlow>
-            {
-                new("台新", 410m, 1090m, 0.61m, 0.56m),
-                new("富邦建國", 290m, 890m, 0.58m, 0.48m),
-                new("新光", -120m, 180m, 0.44m, 0.39m),
-            },
-            new InstitutionalFlow(1140m, 180m, 70m, 2, -0.8m, -0.4m),
-            new PriceAction(54.8m, 0.7m, 2.8m, 6.1m, 5.5m, 8.9m, 2.1m)),
-        new(
-            "2603",
-            "長榮",
-            "航運",
-            new List<BrokerFlow>
-            {
-                new("新加坡商瑞銀", -1060m, -3120m, 0.79m, 0.71m),
-                new("元大總公司", -640m, -2180m, 0.74m, 0.69m),
-                new("港商法國興業", -420m, -1460m, 0.67m, 0.62m),
-            },
-            new InstitutionalFlow(-3510m, -240m, -110m, -4, 6.1m, 8.4m),
-            new PriceAction(214.5m, -2.6m, -7.1m, -10.8m, 16.7m, 1.8m, 3.4m)),
-        new(
-            "2615",
-            "萬海",
-            "航運",
-            new List<BrokerFlow>
-            {
-                new("港商麥格理", -520m, -1650m, 0.71m, 0.64m),
-                new("美商高盛", -470m, -1420m, 0.66m, 0.6m),
-                new("國票敦北法人", -210m, -780m, 0.58m, 0.53m),
-            },
-            new InstitutionalFlow(-2140m, -160m, -90m, -3, 4.3m, 5.8m),
-            new PriceAction(92.6m, -1.8m, -5.9m, -9.1m, 14.2m, 2.6m, 3.1m)),
-        new(
-            "3706",
-            "神達",
-            "伺服器",
-            new List<BrokerFlow>
-            {
-                new("兆豐寶成", 320m, 980m, 0.62m, 0.57m),
-                new("群益金鼎", 180m, 610m, 0.55m, 0.49m),
-                new("永豐金", -60m, 90m, 0.41m, 0.38m),
-            },
-            new InstitutionalFlow(920m, 210m, 40m, 2, 1.8m, -0.9m),
-            new PriceAction(68.3m, 0.4m, 2.1m, 5.6m, 7.3m, 7.9m, 2.8m)),
-    };
 
     private static readonly IReadOnlyDictionary<string, ScoringProfile> SectorProfiles =
         new Dictionary<string, ScoringProfile>(StringComparer.Ordinal)
@@ -110,36 +34,19 @@ public sealed class ChipAnalysisService : IChipAnalysisService
 
     private static readonly IReadOnlyList<DataSourceStatus> DataSources =
     [
-        new("TWSE Daily Market", "價格與成交", "Planned", DateTimeOffset.UtcNow.AddDays(-1), "上市日線、成交量、漲跌幅", "預計串接公開盤後資料與快取層"),
-        new("Broker Branch Flow", "分點籌碼", "Sample", DateTimeOffset.UtcNow, "主力分點五日淨買賣與連續性", "目前以內建示範樣本模擬"),
-        new("Institutional Flow", "法人籌碼", "Sample", DateTimeOffset.UtcNow, "外資、投信、自營商買賣超", "目前以內建示範樣本模擬"),
-        new("Margin Short Interest", "資券", "Planned", DateTimeOffset.UtcNow.AddDays(-1), "融資、融券與券資比", "供風險與反向訊號使用"),
+        new("TWSE Daily Market", "價格與成交", "Unavailable", DateTimeOffset.UtcNow, "上市日線、成交量、漲跌幅", "此 ASP.NET 原型後端未接真實 TWSE 資料；正式部署請使用 Next.js 同站 API。"),
+        new("Broker Branch Flow", "分點籌碼", "Unavailable", DateTimeOffset.UtcNow, "主力分點五日淨買賣與連續性", "此原型後端未接正式分點資料，也不再提供示範資料。"),
+        new("Institutional Flow", "法人籌碼", "Unavailable", DateTimeOffset.UtcNow, "外資、投信、自營商買賣超", "此 ASP.NET 原型後端未接真實法人資料；請改用前端同站 API。"),
+        new("Margin Short Interest", "資券", "Unavailable", DateTimeOffset.UtcNow, "融資、融券與券資比", "此 ASP.NET 原型後端未接真實資券資料；請改用前端同站 API。"),
     ];
-
-    private static readonly BacktestSummary Backtest = new(
-        DateTimeOffset.UtcNow,
-        new List<BacktestPeriodMetric>
-        {
-            new("2025 Q4", 142, 0.61m, 3.8m, -5.7m, 1.56m),
-            new("2026 Q1", 167, 0.64m, 4.3m, -4.9m, 1.71m),
-            new("2026 Q2", 119, 0.67m, 4.9m, -4.2m, 1.88m),
-        },
-        0.64m,
-        4.3m,
-        -4.9m,
-        1.72m,
-        "此摘要目前為策略研究樣本，用來固定回測 API 介面；正式績效需接上真實歷史資料後重算。"
-    );
 
     private readonly HashSet<string> _allowedSymbols;
 
     private static readonly IReadOnlyList<string> Methodology =
     [
-        "以券商分點五日淨買賣、連續性與追價積極度衡量主力習慣。",
-        "納入外資、投信、自營商與資券變化，建立吸籌與派發雙向分數。",
-        "依產業套用不同權重設定，避免半導體與航運共用同一套籌碼邏輯。",
-        "依價格位置與估計波動度計算建議進場、停損、停利，保持固定風報比。",
-        "目前資料為內建示範樣本，正式上線前需串接上市盤後或商用資料源並回測。"
+        "此 ASP.NET Core 後端保留為原型參考，未串接真實 TWSE 資料。",
+        "正式部署與最新資料請使用 Next.js 同站 API Routes。",
+        "為避免誤導，此原型 API 不再提供任何示範候選股或示範回測。"
     ];
 
     public ChipAnalysisService(IOptions<ListedUniverseOptions> listedUniverseOptions)
@@ -151,35 +58,32 @@ public sealed class ChipAnalysisService : IChipAnalysisService
 
     public AnalysisResponse GetLatestAnalysis()
     {
-        var signals = SampleUniverse
-            .Where(snapshot => IsWhitelistedSymbol(snapshot.Symbol))
-            .Select(Analyze)
-            .OrderByDescending(signal => signal.ConvictionScore)
-            .ToList();
-
-        var longCandidates = signals
-            .Where(signal => signal.Direction == TradeDirection.Long)
-            .OrderByDescending(signal => signal.ConvictionScore)
-            .ToList();
-
-        var shortCandidates = signals
-            .Where(signal => signal.Direction == TradeDirection.Short)
-            .OrderByDescending(signal => signal.ConvictionScore)
-            .ToList();
+        var signals = Array.Empty<StockSignal>();
 
         return new AnalysisResponse(
             DateTimeOffset.UtcNow,
             MarketScope,
             UniverseRule,
             Methodology,
-            longCandidates,
-            shortCandidates,
+            signals,
+            signals,
             signals);
     }
 
     public IReadOnlyList<DataSourceStatus> GetDataSources() => DataSources;
 
-    public BacktestSummary GetBacktestSummary() => Backtest;
+    public BacktestSummary GetBacktestSummary()
+    {
+        return new BacktestSummary(
+            DateTimeOffset.UtcNow,
+            Array.Empty<BacktestPeriodMetric>(),
+            null,
+            null,
+            null,
+            null,
+            "此 ASP.NET 原型後端未接真實歷史資料；為避免假數據，回測摘要已停用，正式資料請使用 Next.js 同站 API。"
+        );
+    }
 
     private static bool IsTwseListedSymbol(string symbol)
     {
@@ -548,9 +452,9 @@ public sealed class ChipAnalysisService : IChipAnalysisService
 
     private static decimal CalculateHistoricalProfitFactor(decimal historicalWinRate, decimal historicalAverageReturn, int similarSignalCount, decimal fingerprintEdgeScore)
     {
-        var sampleBoost = Math.Min(0.18m, similarSignalCount / 1000m);
+        var evidenceBoost = Math.Min(0.18m, similarSignalCount / 1000m);
         var fingerprintBoost = Math.Max(0m, fingerprintEdgeScore - 55m) * 0.006m;
-        var rawValue = 1.02m + ((historicalWinRate - 0.50m) * 3.4m) + (historicalAverageReturn * 0.05m) + sampleBoost + fingerprintBoost;
+        var rawValue = 1.02m + ((historicalWinRate - 0.50m) * 3.4m) + (historicalAverageReturn * 0.05m) + evidenceBoost + fingerprintBoost;
         return Math.Round(Math.Clamp(rawValue, 1.01m, 2.60m), 2);
     }
 

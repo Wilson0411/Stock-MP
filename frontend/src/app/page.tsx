@@ -104,19 +104,19 @@ type DataSourceStatus = {
 type BacktestPeriodMetric = {
   period: string;
   totalSignals: number;
-  winRate: number;
-  averageReturnPercent: number;
-  maxDrawdownPercent: number;
-  profitFactor: number;
+  winRate: number | null;
+  averageReturnPercent: number | null;
+  maxDrawdownPercent: number | null;
+  profitFactor: number | null;
 };
 
 type BacktestSummary = {
   generatedAt: string;
   periods: BacktestPeriodMetric[];
-  overallWinRate: number;
-  averageReturnPercent: number;
-  maxDrawdownPercent: number;
-  profitFactor: number;
+  overallWinRate: number | null;
+  averageReturnPercent: number | null;
+  maxDrawdownPercent: number | null;
+  profitFactor: number | null;
   notes: string;
 };
 
@@ -134,181 +134,18 @@ const emptyAnalysis: AnalysisResponse = {
 const emptyBacktest: BacktestSummary = {
   generatedAt: "",
   periods: [],
-  overallWinRate: 0,
-  averageReturnPercent: 0,
-  maxDrawdownPercent: 0,
-  profitFactor: 0,
-  notes: "回測模組建置中。",
-};
-const fallbackTimestamp = "2026-05-27T02:00:00Z";
-
-const fallbackData: AnalysisResponse = {
-  generatedAt: fallbackTimestamp,
-  marketScope: "TWSE_ONLY",
-  universeRule: "僅納入上市四位數股票代號樣本",
-  methodology: [
-    "以券商分點連續性、法人共振、資券變化與價格位置建立雙向評分。",
-    "訊號價格為策略建議區間，不是保證成交價，實盤前仍需回測與風控。",
-    "若前端無法連線後端，頁面會顯示示範資料。",
-  ],
-  longCandidates: [
-    {
-      symbol: "2330",
-      name: "台積電",
-      sector: "半導體",
-      strategyProfile: "Institutional Momentum",
-      direction: "Long",
-      convictionScore: 82,
-      accumulationScore: 84,
-      distributionScore: 39,
-      confidence: 79,
-      lastClose: 912,
-      dayChangePercent: 1.9,
-      fiveDayChangePercent: 4.8,
-      twentyDayChangePercent: 11.3,
-      primaryBrokers: ["富邦", "摩根", "凱基台北"],
-      rationale: ["外資與投信同步回補", "主力分點連買延續性高", "股價靠近趨勢上緣但未過熱"],
-      tradePlan: {
-        entryPrice: 905,
-        stopLossPrice: 885,
-        takeProfitPrice: 953,
-        riskRewardRatio: 2.4,
-      },
-      contextEdge: {
-        marketRegime: "趨勢突破",
-        brokerFingerprint: "凱基台北 連買追價",
-        fingerprintProfile: {
-          dominantBroker: "凱基台北",
-          patternLabel: "連買追價",
-          continuityScore: 82,
-          aggressionScore: 74,
-          concentrationScore: 78,
-          institutionalAlignmentScore: 84,
-          edgeScore: 79.6,
-          summary: "凱基台北 呈現 連買追價，延續 82% 、追價 74% 、籌碼集中 78 分、法人同向 84 分。",
-        },
-        similarSignalCount: 74,
-        historicalWinRate: 0.682,
-        historicalAverageReturnPercent: 5.1,
-        historicalProfitFactor: 1.96,
-        confidenceLabel: "高",
-        matchingTraits: ["市場情境: 趨勢突破", "主力指紋: 凱基台北 連買追價", "法人共振: 偏多", "分點延續率 82%"],
-      },
-    },
-  ],
-  shortCandidates: [
-    {
-      symbol: "2603",
-      name: "長榮",
-      sector: "航運",
-      strategyProfile: "Mean Reversion Short Bias",
-      direction: "Short",
-      convictionScore: 78,
-      accumulationScore: 36,
-      distributionScore: 82,
-      confidence: 76,
-      lastClose: 214.5,
-      dayChangePercent: -2.6,
-      fiveDayChangePercent: -7.1,
-      twentyDayChangePercent: -10.8,
-      primaryBrokers: ["新加坡商瑞銀", "元大總公司", "港商法國興業"],
-      rationale: ["分點轉賣且追價意願偏低", "外資連賣與融資增加形成反向訊號", "跌破短波整理支撐"],
-      tradePlan: {
-        entryPrice: 216,
-        stopLossPrice: 221.5,
-        takeProfitPrice: 201,
-        riskRewardRatio: 2.7,
-      },
-      contextEdge: {
-        marketRegime: "弱勢跌破",
-        brokerFingerprint: "新加坡商瑞銀 連賣壓低",
-        fingerprintProfile: {
-          dominantBroker: "新加坡商瑞銀",
-          patternLabel: "連賣壓低",
-          continuityScore: 79,
-          aggressionScore: 71,
-          concentrationScore: 74,
-          institutionalAlignmentScore: 76,
-          edgeScore: 75,
-          summary: "新加坡商瑞銀 呈現 連賣壓低，延續 79% 、追價 71% 、籌碼集中 74 分、法人同向 76 分。",
-        },
-        similarSignalCount: 61,
-        historicalWinRate: 0.649,
-        historicalAverageReturnPercent: 4.6,
-        historicalProfitFactor: 1.83,
-        confidenceLabel: "中高",
-        matchingTraits: ["市場情境: 弱勢跌破", "主力指紋: 新加坡商瑞銀 連賣壓低", "法人共振: 偏空", "分點延續率 79%"],
-      },
-    },
-  ],
-  allSignals: [],
+  overallWinRate: null,
+  averageReturnPercent: null,
+  maxDrawdownPercent: null,
+  profitFactor: null,
+  notes: "尚未提供真實歷史回測資料。",
 };
 
-fallbackData.allSignals = [...fallbackData.longCandidates, ...fallbackData.shortCandidates];
+function formatPercent(value: number | null) {
+  if (value === null) {
+    return "-";
+  }
 
-const fallbackSources: DataSourceStatus[] = [
-  {
-    name: "Broker Branch Flow",
-    category: "分點籌碼",
-    status: "Sample",
-    lastUpdatedAt: fallbackTimestamp,
-    coverage: "主力分點五日淨買賣與連續性",
-    notes: "目前以前端示範資料與後端樣本同步。",
-  },
-  {
-    name: "Institutional Flow",
-    category: "法人籌碼",
-    status: "Sample",
-    lastUpdatedAt: fallbackTimestamp,
-    coverage: "外資、投信、自營商籌碼方向",
-    notes: "後續可替換成正式資料管線。",
-  },
-  {
-    name: "TWSE Daily Market",
-    category: "價格與成交",
-    status: "Planned",
-    lastUpdatedAt: fallbackTimestamp,
-    coverage: "上市日線、成交量、波動度與排名因子",
-    notes: "只保留上市資料範圍，預留真實資料串接與快取層。",
-  },
-];
-
-const fallbackBacktest: BacktestSummary = {
-  generatedAt: fallbackTimestamp,
-  periods: [
-    {
-      period: "2025 Q4",
-      totalSignals: 142,
-      winRate: 0.61,
-      averageReturnPercent: 3.8,
-      maxDrawdownPercent: -5.7,
-      profitFactor: 1.56,
-    },
-    {
-      period: "2026 Q1",
-      totalSignals: 167,
-      winRate: 0.64,
-      averageReturnPercent: 4.3,
-      maxDrawdownPercent: -4.9,
-      profitFactor: 1.71,
-    },
-    {
-      period: "2026 Q2",
-      totalSignals: 119,
-      winRate: 0.67,
-      averageReturnPercent: 4.9,
-      maxDrawdownPercent: -4.2,
-      profitFactor: 1.88,
-    },
-  ],
-  overallWinRate: 0.64,
-  averageReturnPercent: 4.3,
-  maxDrawdownPercent: -4.9,
-  profitFactor: 1.72,
-  notes: "目前是策略研究樣本，正式績效需接真實歷史資料後重算。",
-};
-
-function formatPercent(value: number) {
   const prefix = value > 0 ? "+" : "";
   return `${prefix}${value.toFixed(1)}%`;
 }
@@ -329,11 +166,19 @@ function priceTone(value: number) {
   return value >= 0 ? "text-[color:var(--success)]" : "text-[color:var(--danger)]";
 }
 
-function formatRatio(value: number) {
+function formatRatio(value: number | null) {
+  if (value === null) {
+    return "-";
+  }
+
   return value.toFixed(2);
 }
 
-function formatWinRate(value: number) {
+function formatWinRate(value: number | null) {
+  if (value === null) {
+    return "-";
+  }
+
   return `${(value * 100).toFixed(1)}%`;
 }
 
@@ -778,11 +623,11 @@ function recommendedPresetInfo(side: "long" | "short", baseControls: ListControl
   const sideLabel = side === "long" ? "做多" : "做空";
   const recommended = recommendedPresetLabel(baseControls, signals);
   const counts = presetResultCounts(baseControls, signals);
-  const fallback = counts.every((preset) => preset.count === 0);
+  const noPresetHasResults = counts.every((preset) => preset.count === 0);
 
   return {
     title: `${sideLabel}推薦模式`,
-    description: fallback
+    description: noPresetHasResults
       ? `目前 ${sideLabel} 清單在三種 preset 下都沒有結果，因此退回 ${recommended} 作為較寬鬆的預設。`
       : `目前 ${sideLabel} 清單會優先選擇仍有結果的最嚴格 preset，現在建議使用 ${recommended}。`,
     bullets: counts.map((preset) => `${preset.label}: ${preset.count} 檔`),
@@ -1134,16 +979,6 @@ function termInfo(term: string): InfoSpec {
       description: "前端已成功連到目前的同站 API，畫面數值來自最新可用 TWSE 公開資料。",
       risks: ["交易所若當日尚未更新，系統會使用最近可用交易日", "公開資料目前不含券商分點明細"],
     },
-    Sample: {
-      title: term,
-      description: "這個標籤只保留給尚未接上正式資料管線的來源；目前首頁主要資料已改成真實 TWSE 公開資料。",
-      risks: ["若未來仍有來源顯示 Sample，代表該來源尚未正式啟用", "未標為 Live 的來源不應直接拿來做績效判讀"],
-    },
-    Planned: {
-      title: term,
-      description: "這個資料源欄位與流程已規劃，但尚未完成正式接線。",
-      risks: ["規劃中的資料源尚未參與真實運算", "正式接線前相關區塊只能作為產品藍圖"],
-    },
   };
 
   return terms[term] ?? {
@@ -1164,7 +999,7 @@ function brokerInfo(broker: string): InfoSpec {
 function sourceInfo(name: string): InfoSpec {
   return {
     title: name,
-    description: "這是目前系統規劃或已模擬接入的資料來源名稱。",
+    description: "這是目前系統使用中的資料來源名稱。",
     bullets: ["價格與成交供趨勢與波動使用", "分點與法人供籌碼判讀使用", "資券供風險與反向訊號使用"],
     risks: ["資料更新頻率不同會造成時差", "欄位定義若未標準化，跨來源整合容易出錯"],
   };
@@ -1199,13 +1034,6 @@ function methodologyInfo(item: string): InfoSpec {
       formula: "Entry / Stop / Target = 收盤價 ± ATR × 各策略倍數",
       bullets: ["做多與做空使用相反方向的 ATR 緩衝", "高信心分數會稍微放大停利目標"],
       risks: ["真實市場有跳空與滑價，理論價格不一定能完整執行", "固定風報比在極端行情下可能需要動態調整"],
-    },
-    "目前資料為內建示範樣本，正式上線前需串接上市盤後或商用資料源並回測。": {
-      title: "資料成熟度",
-      description: "現在這版系統流程完整，但資料仍以樣本模擬為主；真正能比較市售工具強弱，要靠正式資料與回測。",
-      formula: "目前為 sample universe + sample flows，未接正式盤後資料",
-      bullets: ["畫面與 API 介面已可直接擴充", "下一步重點是資料真實化與績效驗證"],
-      risks: ["樣本資料無法代表真實市場表現", "未接正式資料前，不應把當前數值視為可直接下單依據"],
     },
   };
 

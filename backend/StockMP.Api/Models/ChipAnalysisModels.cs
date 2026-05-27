@@ -77,18 +77,18 @@ public sealed record DataSourceStatus(
 public sealed record BacktestPeriodMetric(
     string Period,
     int TotalSignals,
-    decimal WinRate,
-    decimal AverageReturnPercent,
-    decimal MaxDrawdownPercent,
-    decimal ProfitFactor);
+    decimal? WinRate,
+    decimal? AverageReturnPercent,
+    decimal? MaxDrawdownPercent,
+    decimal? ProfitFactor);
 
 public sealed record BacktestSummary(
     DateTimeOffset GeneratedAt,
     IReadOnlyList<BacktestPeriodMetric> Periods,
-    decimal OverallWinRate,
-    decimal AverageReturnPercent,
-    decimal MaxDrawdownPercent,
-    decimal ProfitFactor,
+    decimal? OverallWinRate,
+    decimal? AverageReturnPercent,
+    decimal? MaxDrawdownPercent,
+    decimal? ProfitFactor,
     string Notes);
 
 public sealed record StockSignal(

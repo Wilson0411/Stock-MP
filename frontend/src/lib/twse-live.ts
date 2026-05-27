@@ -1,3 +1,5 @@
+import { get as httpsGet } from "node:https";
+
 type BrokerFlow = {
   broker: string;
   netLots: number;
@@ -491,21 +493,95 @@ function emptyMarginRow(symbol: string, name: string): MarginRow {
 }
 
 async function fetchJson(url: string): Promise<any> {
-  const response = await fetch(url, {
-    cache: "no-store",
-    headers: {
-      Accept: "application/json, text/plain, */*",
-      "Cache-Control": "no-store",
-      Pragma: "no-cache",
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`TWSE request failed: ${response.status}`);
-  }
-
-  const text = await response.text();
+  const text = await requestText(url);
   return JSON.parse(text);
+}
+
+function requestText(url: string, redirectDepth = 0, retryCount = 0): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const request = httpsGet(
+      url,
+      {
+        headers: {
+          Accept: "application/json, text/plain, */*",
+          "Cache-Control": "no-store",
+          Pragma: "no-cache",
+          "User-Agent": "Mozilla/5.0",
+        },
+      },
+      (response) => {
+        const statusCode = response.statusCode ?? 0;
+
+        if (statusCode >= 300 && statusCode < 400) {
+          const location = response.headers.location;
+          response.resume();
+
+          if (!location) {
+            if (retryCount < 3) {
+              resolve(retryRequest(url, redirectDepth, retryCount));
+              return;
+            }
+
+            reject(new Error(`TWSE request redirected without location: ${statusCode}`));
+            return;
+          }
+
+          if (redirectDepth >= 3) {
+            reject(new Error(`TWSE request exceeded redirect limit: ${statusCode}`));
+            return;
+          }
+
+          resolve(requestText(new URL(location, url).toString(), redirectDepth + 1, retryCount));
+          return;
+        }
+
+        if (statusCode < 200 || statusCode >= 300) {
+          response.resume();
+
+          if (retryCount < 3 && isTransientStatus(statusCode)) {
+            resolve(retryRequest(url, redirectDepth, retryCount));
+            return;
+          }
+
+          reject(new Error(`TWSE request failed: ${statusCode}`));
+          return;
+        }
+
+        let body = "";
+        response.setEncoding("utf8");
+        response.on("data", (chunk) => {
+          body += chunk;
+        });
+        response.on("end", () => {
+          resolve(body);
+        });
+      },
+    );
+
+    request.on("error", (error) => {
+      if (retryCount < 3) {
+        resolve(retryRequest(url, redirectDepth, retryCount));
+        return;
+      }
+
+      reject(error);
+    });
+  });
+}
+
+function retryRequest(url: string, redirectDepth: number, retryCount: number) {
+  const delayMs = 400 * (retryCount + 1);
+  return wait(delayMs).then(() => requestText(url, redirectDepth, retryCount + 1));
+}
+
+function isTransientStatus(statusCode: number) {
+  return statusCode === 307 || statusCode === 408 || statusCode === 425 || statusCode === 429 || statusCode >= 500;
+}
+
+function wait(delayMs: number) {
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, delayMs);
+  });
 }
 
 function detectKey(record: Record<string, string>, candidates: string[]) {
