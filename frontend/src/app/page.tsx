@@ -1580,12 +1580,15 @@ function DashboardPage() {
       const [analysisResult, sourceResult, backtestResult] = await Promise.allSettled([
         fetch(`${apiBaseUrl}/api/chip-analysis/opportunities`, {
           headers: { Accept: "application/json" },
+          cache: "no-store",
         }),
         fetch(`${apiBaseUrl}/api/chip-analysis/data-sources`, {
           headers: { Accept: "application/json" },
+          cache: "no-store",
         }),
         fetch(`${apiBaseUrl}/api/chip-analysis/backtest-summary`, {
           headers: { Accept: "application/json" },
+          cache: "no-store",
         }),
       ]);
 
@@ -1621,9 +1624,13 @@ function DashboardPage() {
     }
 
     void loadDashboard();
+    const refreshTimer = window.setInterval(() => {
+      void loadDashboard();
+    }, 60_000);
 
     return () => {
       active = false;
+      window.clearInterval(refreshTimer);
     };
   }, []);
 
