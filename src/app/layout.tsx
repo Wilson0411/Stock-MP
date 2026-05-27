@@ -1,0 +1,1 @@
+export { metadata, default } from "../../frontend/src/app/layout";

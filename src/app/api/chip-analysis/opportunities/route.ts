@@ -1,0 +1,1 @@
+export { GET } from "../../../../../frontend/src/app/api/chip-analysis/opportunities/route";

@@ -16,6 +16,11 @@ Thumbs.db
 *.tmp
 *.temp
 
+# Root Vercel / Next wrapper
+node_modules/
+.next/
+out/
+
 # Frontend: Next.js / Bun
 frontend/node_modules/
 frontend/.next/

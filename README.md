@@ -46,7 +46,7 @@ $env:NEXT_PUBLIC_API_BASE_URL="http://localhost:5273"
 這個版本已可單獨部署到 Vercel。建議在 Vercel 專案設定中：
 
 - Repository 指向目前 repo
-- Root Directory 設為 frontend
+- Root Directory 可直接用 repo 根目錄；若你偏好也可手動設為 frontend
 - Install Command 使用 bun install
 - Build Command 使用 bun run build
 
