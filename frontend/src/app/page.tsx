@@ -120,7 +120,8 @@ type BacktestSummary = {
   notes: string;
 };
 
-const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5273";
+const apiBaseUrl = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "").replace(/\/$/, "");
+const apiBaseLabel = apiBaseUrl || "same-origin";
 const fallbackTimestamp = "2026-05-27T02:00:00Z";
 
 const fallbackData: AnalysisResponse = {
@@ -1692,7 +1693,7 @@ function DashboardPage() {
               <ExplainableBadge text={`做空模式: ${shortMode}`} info={presetInfo("short", shortMode)} toneClass={presetToneClass(shortMode)} />
               <ExplainableBadge text={`做多推薦: ${recommendedLongMode}`} info={recommendedLongInfo} toneClass={presetToneClass(recommendedLongMode)} />
               <ExplainableBadge text={`做空推薦: ${recommendedShortMode}`} info={recommendedShortInfo} toneClass={presetToneClass(recommendedShortMode)} />
-              <ExplainableBadge text={`API Base: ${apiBaseUrl}`} info={{ title: "API Base", description: "前端讀取後端分析結果的 API 位址。", bullets: ["頁面會用這個位址抓 opportunities、data-sources、backtest-summary", "若連不到才會退回示範資料"] }} />
+              <ExplainableBadge text={`API Base: ${apiBaseLabel}`} info={{ title: "API Base", description: "前端讀取分析結果的 API 位址。若未設定環境變數，預設使用同站的 Next.js API route。", bullets: ["頁面會用這個位址抓 opportunities、data-sources、backtest-summary", "部署到 Vercel 時，same-origin 代表前後端都由同一個 Next.js 專案提供"] }} />
             </div>
             <div className="mt-4 flex flex-wrap items-center gap-3">
               <button
