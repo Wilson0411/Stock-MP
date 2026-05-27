@@ -124,6 +124,8 @@ export type AnalysisResponse = {
   allSignals: StockSignal[];
 };
 
+import { buildLiveAnalysisDataset, getLiveDataSources } from "./twse-live";
+
 type ScoringProfile = {
   name: string;
   brokerWeight: number;
@@ -247,44 +249,37 @@ const backtestPeriods: BacktestPeriodMetric[] = [
   { period: "2026 Q2", totalSignals: 119, winRate: 0.67, averageReturnPercent: 4.9, maxDrawdownPercent: -4.2, profitFactor: 1.88 },
 ];
 
-export function getLatestAnalysis(): AnalysisResponse {
-  const signals = sampleUniverse
+export async function getLatestAnalysis(): Promise<AnalysisResponse> {
+  const liveDataset = await buildLiveAnalysisDataset();
+  const signals = liveDataset.snapshots
     .filter((snapshot) => isTwseListedSymbol(snapshot.symbol))
     .map(analyze)
     .sort((left, right) => right.convictionScore - left.convictionScore);
 
   return {
-    generatedAt: new Date().toISOString(),
+    generatedAt: liveDataset.generatedAt,
     marketScope,
     universeRule,
-    methodology,
+    methodology: liveDataset.methodology,
     longCandidates: signals.filter((signal) => signal.direction === "Long"),
     shortCandidates: signals.filter((signal) => signal.direction === "Short"),
     allSignals: signals,
   };
 }
 
-export function getDataSources(): DataSourceStatus[] {
-  const now = new Date();
-  const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-
-  return [
-    { name: "TWSE Daily Market", category: "價格與成交", status: "Planned", lastUpdatedAt: yesterday.toISOString(), coverage: "上市日線、成交量、漲跌幅", notes: "預計串接公開盤後資料與快取層" },
-    { name: "Broker Branch Flow", category: "分點籌碼", status: "Sample", lastUpdatedAt: now.toISOString(), coverage: "主力分點五日淨買賣與連續性", notes: "目前以內建示範樣本模擬" },
-    { name: "Institutional Flow", category: "法人籌碼", status: "Sample", lastUpdatedAt: now.toISOString(), coverage: "外資、投信、自營商買賣超", notes: "目前以內建示範樣本模擬" },
-    { name: "Margin Short Interest", category: "資券", status: "Planned", lastUpdatedAt: yesterday.toISOString(), coverage: "融資、融券與券資比", notes: "供風險與反向訊號使用" },
-  ];
+export async function getDataSources(): Promise<DataSourceStatus[]> {
+  return getLiveDataSources();
 }
 
 export function getBacktestSummary(): BacktestSummary {
   return {
     generatedAt: new Date().toISOString(),
-    periods: backtestPeriods,
-    overallWinRate: 0.64,
-    averageReturnPercent: 4.3,
-    maxDrawdownPercent: -4.9,
-    profitFactor: 1.72,
-    notes: "此摘要目前為策略研究樣本，用來固定回測 API 介面；正式績效需接上真實歷史資料後重算。",
+    periods: [],
+    overallWinRate: 0,
+    averageReturnPercent: 0,
+    maxDrawdownPercent: 0,
+    profitFactor: 0,
+    notes: "目前已切換為真實 TWSE 最新資料，但歷史回測模組尚未完成正式建置，因此暫不提供示範績效數字。",
   };
 }
 
@@ -372,12 +367,12 @@ function buildRationale(
 
   if (direction === "Long") {
     reasons.push(`吸籌分數 ${round(accumulationScore, 1)} 明顯高於派發分數 ${round(distributionScore, 1)}。`);
-    reasons.push(`三大主力分點五日淨買超 ${round(brokerBias, 0)} 張，顯示籌碼持續集中。`);
+    reasons.push(`公開籌碼代理五日淨買超 ${round(brokerBias, 0)} 張，顯示多方資金延續。`);
     reasons.push(`法人合計淨買超 ${round(institutionalBias, 0)} 張，外資連續 ${snapshot.institutionalFlow.foreignStreakDays} 日偏多。`);
     reasons.push(`融資變化 ${formatSigned(snapshot.institutionalFlow.marginBalanceChangeRate)}% 與融券變化 ${formatSigned(snapshot.institutionalFlow.shortInterestChangeRate)}%，籌碼結構偏健康。`);
   } else if (direction === "Short") {
     reasons.push(`派發分數 ${round(distributionScore, 1)} 明顯高於吸籌分數 ${round(accumulationScore, 1)}。`);
-    reasons.push(`三大主力分點五日淨賣超 ${round(Math.abs(brokerBias), 0)} 張，籌碼鬆動。`);
+    reasons.push(`公開籌碼代理五日淨賣超 ${round(Math.abs(brokerBias), 0)} 張，籌碼轉弱。`);
     reasons.push(`法人合計淨賣超 ${round(Math.abs(institutionalBias), 0)} 張，外資連續 ${Math.abs(snapshot.institutionalFlow.foreignStreakDays)} 日偏空。`);
     reasons.push(`融資增加 ${formatSigned(snapshot.institutionalFlow.marginBalanceChangeRate)}% 並伴隨融券變化 ${formatSigned(snapshot.institutionalFlow.shortInterestChangeRate)}%，屬於空方有利結構。`);
   } else {

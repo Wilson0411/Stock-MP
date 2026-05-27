@@ -122,6 +122,24 @@ type BacktestSummary = {
 
 const apiBaseUrl = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "").replace(/\/$/, "");
 const apiBaseLabel = apiBaseUrl || "same-origin";
+const emptyAnalysis: AnalysisResponse = {
+  generatedAt: "",
+  marketScope: "TWSE_ONLY",
+  universeRule: "等待最新上市資料",
+  methodology: [],
+  longCandidates: [],
+  shortCandidates: [],
+  allSignals: [],
+};
+const emptyBacktest: BacktestSummary = {
+  generatedAt: "",
+  periods: [],
+  overallWinRate: 0,
+  averageReturnPercent: 0,
+  maxDrawdownPercent: 0,
+  profitFactor: 0,
+  notes: "回測模組建置中。",
+};
 const fallbackTimestamp = "2026-05-27T02:00:00Z";
 
 const fallbackData: AnalysisResponse = {
@@ -320,7 +338,15 @@ function formatWinRate(value: number) {
 }
 
 function formatTimestamp(value: string) {
+  if (!value) {
+    return "-";
+  }
+
   const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "-";
+  }
+
   const year = date.getUTCFullYear();
   const month = `${date.getUTCMonth() + 1}`.padStart(2, "0");
   const day = `${date.getUTCDate()}`.padStart(2, "0");
@@ -894,7 +920,7 @@ function metricInfo(key: string): InfoSpec {
     },
     close: {
       title: "收盤價",
-      description: "樣本資料中的最近一筆收盤價，作為進出場價格的基準。",
+      description: "TWSE 最新可用上市收盤價，作為進出場價格的基準。",
       formula: "最近交易日收盤價",
     },
     dayChange: {
@@ -938,8 +964,8 @@ function metricInfo(key: string): InfoSpec {
     },
     dataStatus: {
       title: "資料狀態",
-      description: "顯示目前頁面是吃後端即時 API，還是退回前端內建示範資料。",
-      formula: "API 成功回應則顯示即時 API，否則顯示示範資料",
+      description: "顯示目前頁面是否成功抓到最新可用 TWSE 公開資料。",
+      formula: "API 成功回應則顯示即時 API，失敗則顯示更新失敗",
     },
     generatedAt: {
       title: "產生時間",
@@ -1105,13 +1131,13 @@ function termInfo(term: string): InfoSpec {
     },
     "即時 API": {
       title: term,
-      description: "前端已成功連到後端 API，畫面數值來自目前的即時服務回應。",
-      risks: ["若後端資料源本身仍是樣本，畫面即時不代表資料真實", "API 正常不等於資料已完成盤後更新"],
+      description: "前端已成功連到目前的同站 API，畫面數值來自最新可用 TWSE 公開資料。",
+      risks: ["交易所若當日尚未更新，系統會使用最近可用交易日", "公開資料目前不含券商分點明細"],
     },
     Sample: {
       title: term,
-      description: "目前這個資料源仍以內建樣本模擬，尚未接上真實資料管線。",
-      risks: ["樣本資料不能直接拿來評估真實績效", "分布特性與真實市場可能有明顯落差"],
+      description: "這個標籤只保留給尚未接上正式資料管線的來源；目前首頁主要資料已改成真實 TWSE 公開資料。",
+      risks: ["若未來仍有來源顯示 Sample，代表該來源尚未正式啟用", "未標為 Live 的來源不應直接拿來做績效判讀"],
     },
     Planned: {
       title: term,
@@ -1129,8 +1155,8 @@ function termInfo(term: string): InfoSpec {
 function brokerInfo(broker: string): InfoSpec {
   return {
     title: broker,
-    description: "這是樣本中被列為主要買賣分點的券商或法人交易席位，用來辨識主力習慣。",
-    bullets: ["目前顯示的是影響力較大的前三個分點", "實際系統可再延伸到連買天數與分點集中度"],
+    description: "這是目前用來代表公開籌碼方向的主要資金角色，現階段以外資、投信、自營商等公開籌碼代理為主。",
+    bullets: ["目前顯示的是影響力較大的前三個公開籌碼角色", "後續若接上分點商用資料，可再延伸到真實分點集中度"],
     risks: ["單一分點不一定等於單一主力", "同一券商可能混有不同客戶行為"],
   };
 }
@@ -1567,11 +1593,11 @@ function DashboardPage() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const [analysis, setAnalysis] = useState<AnalysisResponse>(fallbackData);
-  const [sources, setSources] = useState<DataSourceStatus[]>(fallbackSources);
-  const [backtest, setBacktest] = useState<BacktestSummary>(fallbackBacktest);
+  const [analysis, setAnalysis] = useState<AnalysisResponse>(emptyAnalysis);
+  const [sources, setSources] = useState<DataSourceStatus[]>([]);
+  const [backtest, setBacktest] = useState<BacktestSummary>(emptyBacktest);
   const [loading, setLoading] = useState(true);
-  const [usingFallback, setUsingFallback] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -1596,30 +1622,27 @@ function DashboardPage() {
         return;
       }
 
-      let hasLiveData = false;
+      const failedSlices: string[] = [];
 
       if (analysisResult.status === "fulfilled" && analysisResult.value.ok) {
         setAnalysis((await analysisResult.value.json()) as AnalysisResponse);
-        hasLiveData = true;
       } else {
-        setAnalysis(fallbackData);
+        failedSlices.push("候選清單");
       }
 
       if (sourceResult.status === "fulfilled" && sourceResult.value.ok) {
         setSources((await sourceResult.value.json()) as DataSourceStatus[]);
-        hasLiveData = true;
       } else {
-        setSources(fallbackSources);
+        failedSlices.push("資料來源");
       }
 
       if (backtestResult.status === "fulfilled" && backtestResult.value.ok) {
         setBacktest((await backtestResult.value.json()) as BacktestSummary);
-        hasLiveData = true;
       } else {
-        setBacktest(fallbackBacktest);
+        failedSlices.push("回測摘要");
       }
 
-      setUsingFallback(!hasLiveData);
+      setLoadError(failedSlices.length > 0 ? `目前無法更新：${failedSlices.join("、")}` : null);
       setLoading(false);
     }
 
@@ -1702,6 +1725,11 @@ function DashboardPage() {
               <ExplainableBadge text={`做空推薦: ${recommendedShortMode}`} info={recommendedShortInfo} toneClass={presetToneClass(recommendedShortMode)} />
               <ExplainableBadge text={`API Base: ${apiBaseLabel}`} info={{ title: "API Base", description: "前端讀取分析結果的 API 位址。若未設定環境變數，預設使用同站的 Next.js API route。", bullets: ["頁面會用這個位址抓 opportunities、data-sources、backtest-summary", "部署到 Vercel 時，same-origin 代表前後端都由同一個 Next.js 專案提供"] }} />
             </div>
+            {loadError ? (
+              <div className="mt-4 rounded-2xl border border-[rgba(166,44,43,0.18)] bg-[rgba(166,44,43,0.08)] px-4 py-3 text-sm text-[color:var(--danger)]">
+                {loadError}
+              </div>
+            ) : null}
             <div className="mt-4 flex flex-wrap items-center gap-3">
               <button
                 type="button"
@@ -1736,7 +1764,7 @@ function DashboardPage() {
           <div className="grid gap-4 rounded-[30px] bg-[color:var(--surface-strong)] p-6">
             <div>
               {labelInfo("資料狀態", metricInfo("dataStatus"))}
-              <p className="mt-2 text-2xl font-semibold">{loading ? "載入中" : usingFallback ? "示範資料" : "即時 API"}</p>
+              <p className="mt-2 text-2xl font-semibold">{loading ? "載入中" : loadError ? "更新失敗" : "即時 API"}</p>
             </div>
             <div>
               {labelInfo("產生時間", metricInfo("generatedAt"))}

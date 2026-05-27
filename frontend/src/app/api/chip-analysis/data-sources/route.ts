@@ -4,8 +4,10 @@ import { getDataSources } from "@/lib/chip-analysis";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-export function GET() {
-  return NextResponse.json(getDataSources(), {
+export async function GET() {
+  const dataSources = await getDataSources();
+
+  return NextResponse.json(dataSources, {
     headers: {
       "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
       Pragma: "no-cache",
