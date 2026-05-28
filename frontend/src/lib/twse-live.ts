@@ -113,6 +113,7 @@ const historicalSearchDays = 45;
 const institutionalWindowDays = 5;
 const institutionalSearchDays = 10;
 const marginSearchDays = 10;
+const twseRequestTimeoutMs = 10_000;
 const liveAnalysisCachePath = join(tmpdir(), "stock-mp-live-analysis.json");
 const liveDataSourcesCachePath = join(tmpdir(), "stock-mp-live-data-sources.json");
 
@@ -642,6 +643,10 @@ function requestText(url: string, redirectDepth = 0, retryCount = 0): Promise<st
         });
       },
     );
+
+    request.setTimeout(twseRequestTimeoutMs, () => {
+      request.destroy(new Error(`TWSE request timed out after ${twseRequestTimeoutMs}ms`));
+    });
 
     request.on("error", (error) => {
       if (retryCount < 3) {

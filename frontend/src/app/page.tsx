@@ -39,6 +39,17 @@ type TradePlan = {
   riskRewardRatio: number;
 };
 
+type BrokerFingerprintProfile = {
+  dominantBroker: string;
+  patternLabel: string;
+  continuityScore: number;
+  aggressionScore: number;
+  concentrationScore: number;
+  institutionalAlignmentScore: number;
+  edgeScore: number;
+  summary: string;
+};
+
 type ContextSignalEdge = {
   marketRegime: string;
   brokerFingerprint: string;
@@ -51,16 +62,102 @@ type ContextSignalEdge = {
   matchingTraits: string[];
 };
 
-type BrokerFingerprintProfile = {
-  dominantBroker: string;
-  patternLabel: string;
-  continuityScore: number;
-  aggressionScore: number;
-  concentrationScore: number;
-  institutionalAlignmentScore: number;
-  edgeScore: number;
-  summary: string;
-};
+function applyUltraConservativePreset(controls: ListControlState): ListControlState {
+  return {
+    ...controls,
+    sortBy: "contextWinRate",
+    contextConfidence: "high",
+    contextWinRateThreshold: "70",
+    similarSignalCountThreshold: "70",
+  };
+}
+
+function applyHighEfficiencyPreset(controls: ListControlState): ListControlState {
+  return {
+    ...controls,
+    sortBy: "contextProfitFactor",
+    contextConfidence: "midHigh",
+    contextWinRateThreshold: "60",
+    similarSignalCountThreshold: "50",
+  };
+}
+
+function isHighWinRatePresetActive(controls: ListControlState) {
+  return controls.sortBy === "contextWinRate"
+    && controls.contextConfidence === "midHigh"
+    && controls.contextWinRateThreshold === "65"
+    && controls.similarSignalCountThreshold === "50";
+}
+
+function isUltraConservativePresetActive(controls: ListControlState) {
+  return controls.sortBy === "contextWinRate"
+    && controls.contextConfidence === "high"
+    && controls.contextWinRateThreshold === "70"
+    && controls.similarSignalCountThreshold === "70";
+}
+
+function isHighEfficiencyPresetActive(controls: ListControlState) {
+  return controls.sortBy === "contextProfitFactor"
+    && controls.contextConfidence === "midHigh"
+    && controls.contextWinRateThreshold === "60"
+    && controls.similarSignalCountThreshold === "50";
+}
+
+function activePresetLabel(controls: ListControlState) {
+  if (isUltraConservativePresetActive(controls)) {
+    return "極保守模式";
+  }
+
+  if (isHighEfficiencyPresetActive(controls)) {
+    return "高效率模式";
+  }
+
+  if (isHighWinRatePresetActive(controls)) {
+    return "高勝率模式";
+  }
+
+  return "自訂條件";
+}
+
+function recommendationAlignment(longMode: string, shortMode: string, recommendedLongMode: string, recommendedShortMode: string) {
+  const longAligned = longMode === recommendedLongMode;
+  const shortAligned = shortMode === recommendedShortMode;
+
+  if (longAligned && shortAligned) {
+    return {
+      label: "已與推薦一致",
+      toneClass: "bg-[rgba(31,122,70,0.12)] text-[color:var(--success)]",
+      info: {
+        title: "推薦一致狀態",
+        description: "目前做多與做空兩邊都已套用系統當前建議的推薦模式。",
+        bullets: [`做多: ${longMode}`, `做空: ${shortMode}`],
+      } satisfies InfoSpec,
+    };
+  }
+
+  if (longAligned || shortAligned) {
+    return {
+      label: "部分與推薦一致",
+      toneClass: "bg-[rgba(186,74,0,0.12)] text-[color:var(--accent)]",
+      info: {
+        title: "推薦一致狀態",
+        description: "目前只有其中一邊清單與系統推薦模式一致，另一邊仍是不同設定。",
+        bullets: [`做多: 目前 ${longMode} / 推薦 ${recommendedLongMode}`, `做空: 目前 ${shortMode} / 推薦 ${recommendedShortMode}`],
+      } satisfies InfoSpec,
+    };
+  }
+
+  return {
+    label: "尚未與推薦一致",
+    toneClass: "bg-chip text-muted",
+    info: {
+      title: "推薦一致狀態",
+      description: "目前做多與做空兩邊都還沒對齊到系統建議的推薦模式。",
+      bullets: [`做多: 目前 ${longMode} / 推薦 ${recommendedLongMode}`, `做空: 目前 ${shortMode} / 推薦 ${recommendedShortMode}`],
+      risks: ["目前閱讀回測時，可能和系統建議的清單邏輯不一致"],
+    } satisfies InfoSpec,
+  };
+}
 
 type StockSignal = {
   symbol: string;
@@ -122,6 +219,7 @@ type BacktestSummary = {
 
 const apiBaseUrl = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "").replace(/\/$/, "");
 const apiBaseLabel = apiBaseUrl || "same-origin";
+const dashboardRequestTimeoutMs = 10_000;
 const emptyAnalysis: AnalysisResponse = {
   generatedAt: "",
   marketScope: "TWSE_ONLY",
@@ -140,6 +238,20 @@ const emptyBacktest: BacktestSummary = {
   profitFactor: null,
   notes: "尚未提供真實歷史回測資料。",
 };
+
+function fetchWithTimeout(input: string, init?: RequestInit, timeoutMs = dashboardRequestTimeoutMs) {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => {
+    controller.abort(new DOMException(`Request timed out after ${timeoutMs}ms`, "TimeoutError"));
+  }, timeoutMs);
+
+  return fetch(input, {
+    ...init,
+    signal: controller.signal,
+  }).finally(() => {
+    window.clearTimeout(timeoutId);
+  });
+}
 
 function formatPercent(value: number | null) {
   if (value === null) {
@@ -274,103 +386,6 @@ function applyHighWinRatePreset(controls: ListControlState): ListControlState {
     contextConfidence: "midHigh",
     contextWinRateThreshold: "65",
     similarSignalCountThreshold: "50",
-  };
-}
-
-function applyUltraConservativePreset(controls: ListControlState): ListControlState {
-  return {
-    ...controls,
-    sortBy: "contextWinRate",
-    contextConfidence: "high",
-    contextWinRateThreshold: "70",
-    similarSignalCountThreshold: "70",
-  };
-}
-
-function applyHighEfficiencyPreset(controls: ListControlState): ListControlState {
-  return {
-    ...controls,
-    sortBy: "contextProfitFactor",
-    contextConfidence: "midHigh",
-    contextWinRateThreshold: "60",
-    similarSignalCountThreshold: "50",
-  };
-}
-
-function isHighWinRatePresetActive(controls: ListControlState) {
-  return controls.sortBy === "contextWinRate"
-    && controls.contextConfidence === "midHigh"
-    && controls.contextWinRateThreshold === "65"
-    && controls.similarSignalCountThreshold === "50";
-}
-
-function isUltraConservativePresetActive(controls: ListControlState) {
-  return controls.sortBy === "contextWinRate"
-    && controls.contextConfidence === "high"
-    && controls.contextWinRateThreshold === "70"
-    && controls.similarSignalCountThreshold === "70";
-}
-
-function isHighEfficiencyPresetActive(controls: ListControlState) {
-  return controls.sortBy === "contextProfitFactor"
-    && controls.contextConfidence === "midHigh"
-    && controls.contextWinRateThreshold === "60"
-    && controls.similarSignalCountThreshold === "50";
-}
-
-function activePresetLabel(controls: ListControlState) {
-  if (isUltraConservativePresetActive(controls)) {
-    return "極保守模式";
-  }
-
-  if (isHighEfficiencyPresetActive(controls)) {
-    return "高效率模式";
-  }
-
-  if (isHighWinRatePresetActive(controls)) {
-    return "高勝率模式";
-  }
-
-  return "自訂條件";
-}
-
-function recommendationAlignment(longMode: string, shortMode: string, recommendedLongMode: string, recommendedShortMode: string) {
-  const longAligned = longMode === recommendedLongMode;
-  const shortAligned = shortMode === recommendedShortMode;
-
-  if (longAligned && shortAligned) {
-    return {
-      label: "已與推薦一致",
-      toneClass: "bg-[rgba(31,122,70,0.12)] text-[color:var(--success)]",
-      info: {
-        title: "推薦一致狀態",
-        description: "目前做多與做空兩邊都已套用系統當前建議的推薦模式。",
-        bullets: [`做多: ${longMode}`, `做空: ${shortMode}`],
-      } satisfies InfoSpec,
-    };
-  }
-
-  if (longAligned || shortAligned) {
-    return {
-      label: "部分與推薦一致",
-      toneClass: "bg-[rgba(186,74,0,0.12)] text-[color:var(--accent)]",
-      info: {
-        title: "推薦一致狀態",
-        description: "目前只有其中一邊清單與系統推薦模式一致，另一邊仍是不同設定。",
-        bullets: [`做多: 目前 ${longMode} / 推薦 ${recommendedLongMode}`, `做空: 目前 ${shortMode} / 推薦 ${recommendedShortMode}`],
-      } satisfies InfoSpec,
-    };
-  }
-
-  return {
-    label: "尚未與推薦一致",
-    toneClass: "bg-chip text-muted",
-    info: {
-      title: "推薦一致狀態",
-      description: "目前做多與做空兩邊都還沒對齊到系統建議的推薦模式。",
-      bullets: [`做多: 目前 ${longMode} / 推薦 ${recommendedLongMode}`, `做空: 目前 ${shortMode} / 推薦 ${recommendedShortMode}`],
-      risks: ["目前閱讀回測時，可能和系統建議的清單邏輯不一致"],
-    } satisfies InfoSpec,
   };
 }
 
@@ -1446,76 +1461,88 @@ function DashboardPage() {
     let active = true;
 
     async function loadDashboard() {
-      const [analysisResult, sourceResult, backtestResult] = await Promise.allSettled([
-        fetch(`${apiBaseUrl}/api/chip-analysis/opportunities`, {
-          headers: { Accept: "application/json" },
-          cache: "no-store",
-        }),
-        fetch(`${apiBaseUrl}/api/chip-analysis/data-sources`, {
-          headers: { Accept: "application/json" },
-          cache: "no-store",
-        }),
-        fetch(`${apiBaseUrl}/api/chip-analysis/backtest-summary`, {
-          headers: { Accept: "application/json" },
-          cache: "no-store",
-        }),
-      ]);
+      try {
+        const [analysisResult, sourceResult, backtestResult] = await Promise.allSettled([
+          fetchWithTimeout(`${apiBaseUrl}/api/chip-analysis/opportunities`, {
+            headers: { Accept: "application/json" },
+            cache: "no-store",
+          }),
+          fetchWithTimeout(`${apiBaseUrl}/api/chip-analysis/data-sources`, {
+            headers: { Accept: "application/json" },
+            cache: "no-store",
+          }),
+          fetchWithTimeout(`${apiBaseUrl}/api/chip-analysis/backtest-summary`, {
+            headers: { Accept: "application/json" },
+            cache: "no-store",
+          }),
+        ]);
 
-      if (!active) {
-        return;
-      }
-
-      const criticalFailures: string[] = [];
-      const auxiliaryFailures: string[] = [];
-      const runtimeNotices: string[] = [];
-
-      if (analysisResult.status === "fulfilled" && analysisResult.value.ok) {
-        const nextAnalysis = (await analysisResult.value.json()) as AnalysisResponse;
-        setAnalysis(nextAnalysis);
-        hasAnalysisDataRef.current = nextAnalysis.allSignals.length > 0;
-
-        if (hasLiveFallbackNotice(nextAnalysis.methodology)) {
-          runtimeNotices.push("候選清單暫時改用最近一次成功抓取的真實資料");
+        if (!active) {
+          return;
         }
-      } else {
-        if (hasAnalysisDataRef.current) {
-          runtimeNotices.push("候選清單暫時沿用上一輪成功抓取的真實資料");
+
+        const criticalFailures: string[] = [];
+        const auxiliaryFailures: string[] = [];
+        const runtimeNotices: string[] = [];
+
+        if (analysisResult.status === "fulfilled" && analysisResult.value.ok) {
+          const nextAnalysis = (await analysisResult.value.json()) as AnalysisResponse;
+          setAnalysis(nextAnalysis);
+          hasAnalysisDataRef.current = nextAnalysis.allSignals.length > 0;
+
+          if (hasLiveFallbackNotice(nextAnalysis.methodology)) {
+            runtimeNotices.push("候選清單暫時改用最近一次成功抓取的真實資料");
+          }
         } else {
-          criticalFailures.push("候選清單");
+          if (hasAnalysisDataRef.current) {
+            runtimeNotices.push("候選清單暫時沿用上一輪成功抓取的真實資料");
+          } else {
+            criticalFailures.push("候選清單");
+          }
         }
-      }
 
-      if (sourceResult.status === "fulfilled" && sourceResult.value.ok) {
-        const nextSources = (await sourceResult.value.json()) as DataSourceStatus[];
-        setSources(nextSources);
-        hasSourceDataRef.current = nextSources.length > 0;
+        if (sourceResult.status === "fulfilled" && sourceResult.value.ok) {
+          const nextSources = (await sourceResult.value.json()) as DataSourceStatus[];
+          setSources(nextSources);
+          hasSourceDataRef.current = nextSources.length > 0;
 
-        if (hasLiveFallbackNotice(nextSources.map((source) => source.notes))) {
-          runtimeNotices.push("資料來源狀態暫時沿用最近一次成功抓取的真實結果");
-        }
-      } else {
-        if (hasSourceDataRef.current) {
-          runtimeNotices.push("資料來源狀態暫時沿用上一輪成功抓取的真實結果");
+          if (hasLiveFallbackNotice(nextSources.map((source) => source.notes))) {
+            runtimeNotices.push("資料來源狀態暫時沿用最近一次成功抓取的真實結果");
+          }
         } else {
-          criticalFailures.push("資料來源");
+          if (hasSourceDataRef.current) {
+            runtimeNotices.push("資料來源狀態暫時沿用上一輪成功抓取的真實結果");
+          } else {
+            criticalFailures.push("資料來源");
+          }
+        }
+
+        if (backtestResult.status === "fulfilled" && backtestResult.value.ok) {
+          setBacktest((await backtestResult.value.json()) as BacktestSummary);
+        } else {
+          auxiliaryFailures.push("回測摘要");
+        }
+
+        setLoadError(criticalFailures.length > 0 ? `目前無法更新：${criticalFailures.join("、")}` : null);
+
+        const notices = [
+          auxiliaryFailures.length > 0 ? `部分資料暫未更新：${auxiliaryFailures.join("、")}` : null,
+          ...runtimeNotices,
+        ].filter((notice): notice is string => Boolean(notice));
+
+        setLoadNotice(notices.length > 0 ? notices.join("；") : null);
+      } catch {
+        if (!active) {
+          return;
+        }
+
+        setLoadError("目前無法更新：資料請求逾時或回應格式異常");
+        setLoadNotice(null);
+      } finally {
+        if (active) {
+          setLoading(false);
         }
       }
-
-      if (backtestResult.status === "fulfilled" && backtestResult.value.ok) {
-        setBacktest((await backtestResult.value.json()) as BacktestSummary);
-      } else {
-        auxiliaryFailures.push("回測摘要");
-      }
-
-      setLoadError(criticalFailures.length > 0 ? `目前無法更新：${criticalFailures.join("、")}` : null);
-
-      const notices = [
-        auxiliaryFailures.length > 0 ? `部分資料暫未更新：${auxiliaryFailures.join("、")}` : null,
-        ...runtimeNotices,
-      ].filter((notice): notice is string => Boolean(notice));
-
-      setLoadNotice(notices.length > 0 ? notices.join("；") : null);
-      setLoading(false);
     }
 
     void loadDashboard();
@@ -1565,6 +1592,49 @@ function DashboardPage() {
   const longPresetCounts = presetResultCounts(longControls, analysis.longCandidates);
   const shortPresetCounts = presetResultCounts(shortControls, analysis.shortCandidates);
   const alignmentStatus = recommendationAlignment(longMode, shortMode, recommendedLongMode, recommendedShortMode);
+  const isInitialLoading = loading && analysis.allSignals.length === 0 && sources.length === 0;
+
+  if (isInitialLoading) {
+    return (
+      <main className="mx-auto flex min-h-[70vh] w-full max-w-7xl flex-1 flex-col justify-center px-5 py-8 sm:px-8 lg:px-10">
+        <section className="overflow-hidden rounded-[36px] border border-[color:var(--border)] bg-[color:var(--surface)] px-6 py-10 shadow-[0_30px_80px_rgba(17,17,17,0.08)] backdrop-blur sm:px-8 lg:px-10">
+          <div className="flex justify-end">
+            <ThemeToggle />
+          </div>
+          <div className="mt-10 grid gap-8 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
+            <div>
+              <p className="text-sm uppercase tracking-[0.35em] text-faint">Stock MP</p>
+              <h1 className="mt-4 text-4xl font-semibold leading-tight sm:text-5xl">正在載入籌碼儀表板</h1>
+              <p className="mt-4 max-w-2xl text-base leading-8 text-muted sm:text-lg">
+                先同步候選清單、資料來源狀態與回測摘要，完成後才會顯示完整頁面，避免只看到局部卡片停在載入中。
+              </p>
+              <div className="mt-6 flex flex-wrap gap-3">
+                <ExplainableBadge text={`API Base: ${apiBaseLabel}`} info={{ title: "API Base", description: "前端讀取分析結果的 API 位址。若未設定環境變數，預設使用同站的 Next.js API route。", bullets: ["頁面會用這個位址抓 opportunities、data-sources、backtest-summary", "部署到 Vercel 時，same-origin 代表前後端都由同一個 Next.js 專案提供"] }} />
+                <span className="rounded-full bg-[rgba(186,74,0,0.12)] px-4 py-2 text-sm font-medium text-[color:var(--accent)]">
+                  首次載入中
+                </span>
+              </div>
+            </div>
+
+            <div className="rounded-[30px] bg-[color:var(--surface-strong)] p-6">
+              <div className="flex items-center gap-4">
+                <div className="h-12 w-12 animate-spin rounded-full border-4 border-[color:var(--border)] border-t-[color:var(--accent-cool)]" aria-hidden="true" />
+                <div>
+                  <p className="text-sm uppercase tracking-[0.28em] text-faint">Loading</p>
+                  <p className="mt-2 text-2xl font-semibold">正在抓取最新資料</p>
+                </div>
+              </div>
+              <div className="mt-6 grid gap-3 text-sm leading-7 text-muted">
+                <div className="rounded-2xl bg-chip px-4 py-3">候選清單與分數會在首批資料完成後一起顯示。</div>
+                <div className="rounded-2xl bg-chip px-4 py-3">資料來源狀態不再只停留在卡片內顯示「載入中」。</div>
+                <div className="rounded-2xl bg-chip px-4 py-3">若 API 失敗，頁面會在載入結束後直接顯示錯誤訊息。</div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    );
+  }
 
   return (
     <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col px-5 py-8 sm:px-8 lg:px-10">
