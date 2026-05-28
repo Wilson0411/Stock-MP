@@ -114,13 +114,74 @@ const institutionalWindowDays = 5;
 const institutionalSearchDays = 10;
 const marginSearchDays = 10;
 const twseRequestTimeoutMs = 10_000;
+const liveDatasetMaxAgeMs = 5 * 60_000;
+const liveDataSourcesMaxAgeMs = 5 * 60_000;
 const liveAnalysisCachePath = join(tmpdir(), "stock-mp-live-analysis.json");
 const liveDataSourcesCachePath = join(tmpdir(), "stock-mp-live-data-sources.json");
 
 let lastSuccessfulDataset: LiveAnalysisDataset | null = null;
 let lastSuccessfulDataSources: DataSourceStatus[] | null = null;
+let liveDatasetRefreshPromise: Promise<LiveAnalysisDataset> | null = null;
+let liveDataSourcesRefreshPromise: Promise<DataSourceStatus[]> | null = null;
 
 export async function buildLiveAnalysisDataset(): Promise<LiveAnalysisDataset> {
+  const cachedDataset = lastSuccessfulDataset ?? await readJsonCache<LiveAnalysisDataset>(liveAnalysisCachePath);
+
+  if (cachedDataset) {
+    lastSuccessfulDataset = cachedDataset;
+    lastSuccessfulDataSources = cachedDataset.dataSources;
+
+    if (!isDatasetExpired(cachedDataset.generatedAt, liveDatasetMaxAgeMs)) {
+      return cachedDataset;
+    }
+
+    if (!liveDatasetRefreshPromise) {
+      liveDatasetRefreshPromise = refreshLiveAnalysisDataset().finally(() => {
+        liveDatasetRefreshPromise = null;
+      });
+    }
+
+    return cachedDataset;
+  }
+
+  if (!liveDatasetRefreshPromise) {
+    liveDatasetRefreshPromise = refreshLiveAnalysisDataset().finally(() => {
+      liveDatasetRefreshPromise = null;
+    });
+  }
+
+  return liveDatasetRefreshPromise;
+}
+
+export async function getLiveDataSources(): Promise<DataSourceStatus[]> {
+  const cachedDataSources = lastSuccessfulDataSources ?? await readJsonCache<DataSourceStatus[]>(liveDataSourcesCachePath);
+
+  if (cachedDataSources) {
+    lastSuccessfulDataSources = cachedDataSources;
+
+    if (!isDataSourcesExpired(cachedDataSources, liveDataSourcesMaxAgeMs)) {
+      return cachedDataSources;
+    }
+
+    if (!liveDataSourcesRefreshPromise) {
+      liveDataSourcesRefreshPromise = refreshLiveDataSources().finally(() => {
+        liveDataSourcesRefreshPromise = null;
+      });
+    }
+
+    return cachedDataSources;
+  }
+
+  if (!liveDataSourcesRefreshPromise) {
+    liveDataSourcesRefreshPromise = refreshLiveDataSources().finally(() => {
+      liveDataSourcesRefreshPromise = null;
+    });
+  }
+
+  return liveDataSourcesRefreshPromise;
+}
+
+async function refreshLiveAnalysisDataset(): Promise<LiveAnalysisDataset> {
   try {
     const [companyMetaMap, marketTables, institutionalTables, marginTables] = await Promise.all([
       fetchCompanyMetaMap(),
@@ -198,7 +259,7 @@ export async function buildLiveAnalysisDataset(): Promise<LiveAnalysisDataset> {
   }
 }
 
-export async function getLiveDataSources(): Promise<DataSourceStatus[]> {
+async function refreshLiveDataSources(): Promise<DataSourceStatus[]> {
   try {
     const [marketTables, institutionalTables, marginTables] = await Promise.all([
       fetchRecentMarketTables(1, 7),
@@ -230,6 +291,30 @@ export async function getLiveDataSources(): Promise<DataSourceStatus[]> {
 
     throw error;
   }
+}
+
+function isDatasetExpired(generatedAt: string, maxAgeMs: number) {
+  const generatedTime = new Date(generatedAt).getTime();
+
+  if (Number.isNaN(generatedTime)) {
+    return true;
+  }
+
+  return Date.now() - generatedTime > maxAgeMs;
+}
+
+function isDataSourcesExpired(dataSources: DataSourceStatus[], maxAgeMs: number) {
+  const latestUpdateTime = Math.max(
+    ...dataSources
+      .map((source) => new Date(source.lastUpdatedAt).getTime())
+      .filter((timestamp) => Number.isFinite(timestamp)),
+  );
+
+  if (!Number.isFinite(latestUpdateTime)) {
+    return true;
+  }
+
+  return Date.now() - latestUpdateTime > maxAgeMs;
 }
 
 function buildSnapshots(
