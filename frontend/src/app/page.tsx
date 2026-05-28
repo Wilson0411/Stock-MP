@@ -219,7 +219,7 @@ type BacktestSummary = {
 
 const apiBaseUrl = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "").replace(/\/$/, "");
 const apiBaseLabel = apiBaseUrl || "same-origin";
-const dashboardRequestTimeoutMs = 10_000;
+const dashboardRequestTimeoutMs = 90_000;
 const emptyAnalysis: AnalysisResponse = {
   generatedAt: "",
   marketScope: "TWSE_ONLY",
@@ -1448,6 +1448,7 @@ function DashboardPage() {
   const [loadNotice, setLoadNotice] = useState<string | null>(null);
   const hasAnalysisDataRef = useRef(false);
   const hasSourceDataRef = useRef(false);
+  const isLoadingDashboardRef = useRef(false);
 
   useEffect(() => {
     hasAnalysisDataRef.current = analysis.allSignals.length > 0;
@@ -1461,6 +1462,12 @@ function DashboardPage() {
     let active = true;
 
     async function loadDashboard() {
+      if (isLoadingDashboardRef.current) {
+        return;
+      }
+
+      isLoadingDashboardRef.current = true;
+
       try {
         const [analysisResult, sourceResult, backtestResult] = await Promise.allSettled([
           fetchWithTimeout(`${apiBaseUrl}/api/chip-analysis/opportunities`, {
@@ -1539,6 +1546,8 @@ function DashboardPage() {
         setLoadError("目前無法更新：資料請求逾時或回應格式異常");
         setLoadNotice(null);
       } finally {
+        isLoadingDashboardRef.current = false;
+
         if (active) {
           setLoading(false);
         }
